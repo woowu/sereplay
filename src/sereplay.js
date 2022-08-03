@@ -94,6 +94,9 @@ const writeTrafficLog = (symbol, data, log) => {
 
 const argv = require('yargs/yargs')(process.argv.slice(2))
     .version('0.0.1')
+    .alias('version', 'v')
+    .help()
+    .alias('help', 'h')
     .option('input', {
         alias: 'i',
         describe: 'a file contains the sequence of packets in hex strings',
@@ -140,6 +143,13 @@ const argv = require('yargs/yargs')(process.argv.slice(2))
         nargs: 1,
         type: 'string',
     })
+    .option('repeat', {
+        alias: 'e',
+        describe: 'Repeat the input for n times',
+        nargs: 1,
+        type: 'number',
+        default: 1,
+    })
     .option('log', {
         alias: 'l',
         describe: 'log file',
@@ -156,6 +166,10 @@ if (isNaN(argv.respTimeout) || isNaN(argv.interFrameTimeout) || isNaN(argv.sendD
 }
 if (argv.respTimeout < 0 || argv.interFrameTimeout < 0 || argv.sendDelay < 0) {
     console.error('bad option value');
+    process.exit(1);
+}
+if (isNaN(argv.repeat) || argv.repeat < 1 || parseInt(argv.repeat) != argv.repeat) {
+    console.error('invalid repeat value');
     process.exit(1);
 }
 
@@ -214,6 +228,7 @@ const sendPacketAndWaitResp = (packet, outStream, timeout, cb) => {
 
 (function bindInputOutput (inStream, outStream, options) {
     const packetsQueue = [];
+    const packetsCopy = [];
     var packetIndex = 0;
     var doc = null;
 
@@ -249,12 +264,19 @@ const sendPacketAndWaitResp = (packet, outStream, timeout, cb) => {
             const packet = Buffer.from(line.split(' ').join(''), 'hex');
             packet.doc = doc;
             packetsQueue.push(packet);
+            packetsCopy.push(packet);
             if (packetsQueue.length == 1) process.nextTick(send);
         }
         doc = null;
         ++packetIndex;
     });
     rl.on('close', () => {
+        while (options.repeats > 1) {
+            packetsCopy.forEach(p => {
+                packetsQueue.push(p);
+            });
+            --options.repeats;
+        }
         packetsQueue.push(null);
         if (packetsQueue.length == 1) process.nextTick(send);
     });
@@ -264,4 +286,5 @@ const sendPacketAndWaitResp = (packet, outStream, timeout, cb) => {
         respTimeout: argv.respTimeout,
         sendDelay: argv.sendDelay,
         packetsSelector,
+        repeats: argv.repeat,
     }));
